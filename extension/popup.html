@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Perch</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <img src="icons/32.png" alt="" width="20" height="20">
+      <h1>Perch</h1>
+      <span id="helper" class="chip" hidden></span>
+    </header>
+
+    <button id="float" class="primary" disabled>
+      <span id="float-label">Looking for a video…</span>
+      <kbd>Alt P</kbd>
+    </button>
+    <p id="hint" class="hint" hidden></p>
+
+    <section id="install" class="install" hidden>
+      <strong>One step left: the Perch helper</strong>
+      <p>It keeps floats above every app, removes the frame, and adds Ghost mode. Run <code>install-helper.cmd</code> in the Perch folder, then reopen this.</p>
+    </section>
+
+    <label class="row">
+      <span>
+        Float button on every site
+        <small>Without it: YouTube, X, Twitch, Kick and Crunchyroll. Alt+P works everywhere.</small>
+      </span>
+      <input id="all" type="checkbox" role="switch">
+    </label>
+
+    <button id="back-all" class="quiet" hidden>Bring all floats back</button>
+
+    <dl class="keys">
+      <div><dt>Ghost (click-through)</dt><dd><kbd>Ctrl Alt G</kbd></dd></div>
+      <div><dt>Play / pause from any app</dt><dd><kbd>Ctrl Alt P</kbd></dd></div>
+      <div><dt>Hide / show floats</dt><dd><kbd>Ctrl Alt H</kbd></dd></div>
+      <div><dt>Resize keeping shape</dt><dd><kbd>Shift</kbd> + drag edge</dd></div>
+    </dl>
+  </main>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

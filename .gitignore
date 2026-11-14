@@ -1,0 +1,16 @@
+# Helper builds (install-helper.cmd builds from source)
+build/
+*.exe
+
+# Internal planning notes
+PLAN.md
+
+# Release zips
+dist/
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+node_modules/

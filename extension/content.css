@@ -1,0 +1,56 @@
+/* Perch fill mode. Only active while a tab is floating (attributes set by Perch). */
+html[data-perch-on],
+html[data-perch-on] body {
+  overflow: hidden !important;
+}
+
+html[data-perch-on] body > *:not([data-perch-anc]):not([data-perch-fill]):not([data-perch-fs]) {
+  visibility: hidden !important;
+}
+
+[data-perch-fill],
+[data-perch-fs] {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  transform: none !important;
+  translate: none !important;
+  z-index: 2147483646 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+  visibility: visible !important;
+}
+
+[data-perch-anc] {
+  transform: none !important;
+  translate: none !important;
+  scale: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  perspective: none !important;
+  contain: none !important;
+  will-change: auto !important;
+  clip-path: none !important;
+  mask: none !important;
+  z-index: 2147483646 !important;
+  visibility: visible !important;
+}
+
+video[data-perch-fill],
+video[data-perch-fs] {
+  object-fit: contain !important;
+}
+
+/* The float's own strip owns the top edge; hide site overlays that would sit under it. */
+html[data-perch-on] .ytp-chrome-top,
+html[data-perch-on] .ytp-gradient-top,
+html[data-perch-on] .ytp-show-cards-title {
+  display: none !important;
+}

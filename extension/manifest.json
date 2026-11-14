@@ -1,0 +1,87 @@
+{
+  "manifest_version": 3,
+  "name": "Perch",
+  "version": "0.1.0",
+  "description": "Float any video above every app: any size, frameless, with the site’s own player and subtitles.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwJRBGpzhR36Dp5vUjQgMSUQAOrsd/fhzT4BPdhNHFtAEipsbWOiTn+qD0E/sd3axXQnj9xJK85oEhGmShY+wubZsiAKIMx4TUfEOK4LZOXgn66VzTBKggPCdaYQyqmM+oZxPKH63RJTOXJjWB5Fdz8FW0GgBpkXNS0RwgUdwo/rxa6+nrlyn3zSJK9xNGd9YZCkCVL6s2/x6xceqHM7fNkmKgcLHpeXxEn5qN47j/qENAxXTXMbmI0o98X6zreU3/P96T/+23QpECjIoP/8JnlcZLx48Nyf8RTwdoQRRz2GnI3jbwVHax0oVZrWGIpH+njsik+TF8eBZLzyG3IbrYwIDAQAB",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "action": {
+    "default_title": "Perch: float this video (Alt+P)",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "tabs",
+    "storage",
+    "scripting",
+    "activeTab",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "*://*.x.com/*",
+    "*://*.twitter.com/*",
+    "*://*.twitch.tv/*",
+    "*://*.kick.com/*",
+    "*://*.crunchyroll.com/*"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.x.com/*",
+        "*://*.twitter.com/*",
+        "*://*.twitch.tv/*",
+        "*://*.kick.com/*",
+        "*://*.crunchyroll.com/*"
+      ],
+      "js": [
+        "main-world.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.x.com/*",
+        "*://*.twitter.com/*",
+        "*://*.twitch.tv/*",
+        "*://*.kick.com/*",
+        "*://*.crunchyroll.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "commands": {
+    "float-toggle": {
+      "suggested_key": {
+        "default": "Alt+P"
+      },
+      "description": "Float the video on this page, or bring it back"
+    }
+  }
+}
