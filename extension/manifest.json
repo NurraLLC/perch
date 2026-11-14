@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Perch",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Float any video above every app: any size, frameless, with the site’s own player and subtitles.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwJRBGpzhR36Dp5vUjQgMSUQAOrsd/fhzT4BPdhNHFtAEipsbWOiTn+qD0E/sd3axXQnj9xJK85oEhGmShY+wubZsiAKIMx4TUfEOK4LZOXgn66VzTBKggPCdaYQyqmM+oZxPKH63RJTOXJjWB5Fdz8FW0GgBpkXNS0RwgUdwo/rxa6+nrlyn3zSJK9xNGd9YZCkCVL6s2/x6xceqHM7fNkmKgcLHpeXxEn5qN47j/qENAxXTXMbmI0o98X6zreU3/P96T/+23QpECjIoP/8JnlcZLx48Nyf8RTwdoQRRz2GnI3jbwVHax0oVZrWGIpH+njsik+TF8eBZLzyG3IbrYwIDAQAB",
   "minimum_chrome_version": "116",

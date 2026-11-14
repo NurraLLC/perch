@@ -107,17 +107,17 @@ This is an early release. Tested so far:
 - The full extension in a clean browser profile.
 - YouTube, and X single posts. Quoted posts in the X feed are fixed in v0.1.1 and verified
   against a reproduction of X's feed rebuild.
+- Crunchyroll: protected video plays in the float with Crunchyroll's own subtitles.
+- Two side-by-side monitors: the float opens on the screen you floated from.
 
 **Not yet verified:**
-- Twitch, Kick and Crunchyroll.
+- Twitch and Kick.
 - Edge and Brave.
 - Chat floats.
 - Opacity and Ghost on DRM-protected video.
 
 **Known rough edges:**
-- For a split second while a video pops out, you may see a grey box or the browser window
-  before the float settles.
-- Growing the window quickly can briefly show a dark edge until the page catches up.
+- Growing the window very quickly can briefly show a dark edge until the page catches up.
 
 If Ghost turns protected video black, turn off hardware acceleration in your browser
 (Settings → System).

@@ -56,6 +56,8 @@ namespace Perch
         [DllImport("user32.dll")] public static extern IntPtr DispatchMessageW(ref MSG m);
         [DllImport("user32.dll")] public static extern uint MsgWaitForMultipleObjects(uint n, IntPtr handles, bool all, uint ms, uint mask);
         [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+        [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
+        [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern ushort RegisterClassExW(ref WNDCLASSEX wc);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr CreateWindowExW(uint ex, string cls, string title, uint style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr inst, IntPtr param);
         [DllImport("user32.dll")] public static extern bool DestroyWindow(IntPtr h);
@@ -65,6 +67,17 @@ namespace Perch
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr GetModuleHandleW(string name);
         [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int value, int size);
         [DllImport("dwmapi.dll")] public static extern int DwmExtendFrameIntoClientArea(IntPtr h, ref MARGINS m);
+        public delegate void WinEventProc(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
+        [DllImport("user32.dll")] public static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr mod, WinEventProc proc, uint pid, uint tid, uint flags);
+    }
+
+    // A float window the extension is about to create: hide it the moment it appears,
+    // so the user never sees it with Chrome's frame before it's cropped.
+    class Expected
+    {
+        public int Id; public string Token; public HashSet<IntPtr> Excluded = new HashSet<IntPtr>();
+        public IntPtr Hwnd; public RECT Orig; public bool HasOrig; public long Deadline;
+        public RECT Source; public bool HasSource; // the window the user floated from
     }
 
     class Float
@@ -91,6 +104,8 @@ namespace Perch
         static volatile bool Done;
         static bool HiddenAll;
         static W.WndProc HostProc;   // kept alive for the lifetime of the class registration
+        static W.WinEventProc EventProc; // kept alive while the hooks exist
+        static readonly Dictionary<int, Expected> Expects = new Dictionary<int, Expected>();
         const string HostClass = "PerchFloatHost";
 
         static Float Active; static string Mode, Edge; static POINT Start; static RECT StartRect; static bool Moved;
@@ -102,13 +117,17 @@ namespace Perch
         const long FRAME_BITS = 0x80CF0000L; // WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
         const long WS_EX_TOPMOST = 0x8, WS_EX_TRANSPARENT = 0x20, WS_EX_TOOLWINDOW = 0x80, WS_EX_LAYERED = 0x80000;
         const uint MOD_ALT = 1, MOD_CONTROL = 2, MOD_NOREPEAT = 0x4000;
-        const string Version = "0.2.0";
+        const string Version = "0.2.1";
 
         [STAThread]
         static void Main(string[] args)
         {
             try { W.SetProcessDpiAwarenessContext(new IntPtr(-4)); } catch { }
             RegisterHostClass();
+            // Be told the instant any window appears or changes title (out of context, our thread).
+            EventProc = OnWinEvent;
+            W.SetWinEventHook(0x8002, 0x8002, IntPtr.Zero, EventProc, 0, 0, 0x0002); // EVENT_OBJECT_SHOW
+            W.SetWinEventHook(0x800C, 0x800C, IntPtr.Zero, EventProc, 0, 0, 0x0002); // EVENT_OBJECT_NAMECHANGE
             Out = Console.OpenStandardOutput();
             var reader = new Thread(ReadLoop); reader.IsBackground = true; reader.Start();
 
@@ -120,7 +139,7 @@ namespace Perch
             long lastWatch = 0;
             while (!Done)
             {
-                uint wait = (Active != null || AnyGhost()) ? 8u : 33u;
+                uint wait = (Active != null || AnyGhost() || Expects.Count > 0) ? 8u : 33u;
                 W.MsgWaitForMultipleObjects(0, IntPtr.Zero, false, wait, 0x04FF);
                 MSG m;
                 while (W.PeekMessageW(out m, IntPtr.Zero, 0, 0, 1))
@@ -248,6 +267,21 @@ namespace Perch
             switch (type)
             {
                 case "ping": Send(Obj("type", "pong", "version", Version)); break;
+                case "expect":
+                {
+                    // The float is always a brand-new window, so every Chrome window that exists right
+                    // now (including the tab's current one, whose title may not show the token yet) is excluded.
+                    var e = new Expected { Id = id, Token = Str(msg, "token"), Deadline = Environment.TickCount + 8000 };
+                    W.EnumWindows((h, l) => { if (IsChrome(h)) e.Excluded.Add(h); return true; }, IntPtr.Zero);
+                    // The user just clicked Float or pressed Alt+P, so the foreground window is
+                    // the one they're looking at: the float belongs on that monitor.
+                    IntPtr fg = W.GetForegroundWindow();
+                    if (fg != IntPtr.Zero && W.GetWindowRect(fg, out e.Source)) e.HasSource = true;
+                    DebugLog("expect " + id + " token=" + e.Token + " excluded=" + e.Excluded.Count);
+                    Expects[id] = e;
+                    Send(Obj("type", "expecting", "id", id));
+                    break;
+                }
                 case "attach":
                     if (f != null) Release(f);
                     Pending.RemoveAll(x => x.Id == id);
@@ -270,7 +304,13 @@ namespace Perch
                 case "ghost": if (f != null) { f.Ghost = Bool(msg, "on"); f.Touched = Environment.TickCount; ApplyStyle(f); SendState(f); } break;
                 case "opacity": if (f != null) { f.Opacity = Math.Max(15, Math.Min(100, (int)Num(msg, "value", 100))); ApplyStyle(f); SendState(f); } break;
                 case "pin": if (f != null) { f.Pinned = Bool(msg, "on"); ZOrder(f); SendState(f); } break;
-                case "release": if (f != null) Release(f); Pending.RemoveAll(x => x.Id == id); Send(Obj("type", "released", "id", id)); break;
+                case "release":
+                    if (f != null) Release(f);
+                    Pending.RemoveAll(x => x.Id == id);
+                    Expected ex;
+                    if (Expects.TryGetValue(id, out ex)) { Unhide(ex); Expects.Remove(id); }
+                    Send(Obj("type", "released", "id", id));
+                    break;
             }
         }
 
@@ -291,32 +331,110 @@ namespace Perch
         // ---------- attaching to the Chrome window that carries our title token
         static void TryPending()
         {
+            // Catch expected windows the hook may have missed.
+            foreach (var e in new List<Expected>(Expects.Values))
+            {
+                if (Environment.TickCount > e.Deadline)
+                {
+                    // Never leave a video parked off-screen: if nobody claimed it, put it back.
+                    DebugLog("expect expired " + e.Id + " hwnd=" + e.Hwnd);
+                    Unhide(e);
+                    Expects.Remove(e.Id);
+                    continue;
+                }
+                if (e.Hwnd == IntPtr.Zero)
+                {
+                    IntPtr h = FindByToken(e.Token, e.Excluded);
+                    if (h != IntPtr.Zero) Capture(e, h);
+                }
+            }
             for (int i = Pending.Count - 1; i >= 0; i--)
             {
                 var f = Pending[i];
-                IntPtr hwnd = string.IsNullOrEmpty(f.Token) ? IntPtr.Zero : FindByToken(f.Token);
-                if (hwnd != IntPtr.Zero) { Pending.RemoveAt(i); Attach(f, hwnd); }
-                else if (Environment.TickCount > f.Deadline) { Pending.RemoveAt(i); Send(Obj("type", "attachFailed", "id", f.Id)); }
+                Expected ex; Expects.TryGetValue(f.Id, out ex);
+                IntPtr hwnd = ex != null && ex.Hwnd != IntPtr.Zero ? ex.Hwnd
+                    : string.IsNullOrEmpty(f.Token) ? IntPtr.Zero : FindByToken(f.Token, ex != null ? ex.Excluded : null);
+                if (hwnd != IntPtr.Zero) { DebugLog("attach " + f.Id + " hwnd=" + hwnd + " iw=" + f.Iw + " ih=" + f.Ih); Pending.RemoveAt(i); Attach(f, hwnd, ex); Expects.Remove(f.Id); }
+                else if (Environment.TickCount > f.Deadline)
+                {
+                    DebugLog("attachFailed " + f.Id);
+                    Pending.RemoveAt(i);
+                    if (ex != null) { Unhide(ex); Expects.Remove(f.Id); }
+                    Send(Obj("type", "attachFailed", "id", f.Id));
+                }
             }
         }
 
-        static IntPtr FindByToken(string token)
+        static void OnWinEvent(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
+        {
+            if (Expects.Count == 0 || idObject != 0 || hwnd == IntPtr.Zero) return;
+            Safe(() =>
+            {
+                if (!W.IsWindowVisible(hwnd) || !IsChrome(hwnd)) return;
+                foreach (var e in Expects.Values)
+                {
+                    if (e.Hwnd != IntPtr.Zero || e.Excluded.Contains(hwnd) || !TitleHas(hwnd, e.Token)) continue;
+                    Capture(e, hwnd);
+                    break;
+                }
+            });
+        }
+
+        // Park the new window just off the left of the desktop until it's attached.
+        static void DebugLog(string line)
+        {
+            if (!Debug) return;
+            try
+            {
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Perch");
+                File.AppendAllText(Path.Combine(dir, "debug.log"), DateTime.Now.ToString("HH:mm:ss.fff") + " " + line + Environment.NewLine);
+            }
+            catch { }
+        }
+
+        static void Capture(Expected e, IntPtr h)
+        {
+            DebugLog("capture " + e.Id + " hwnd=" + h + " zoomed=" + W.IsZoomed(h));
+            e.Hwnd = h;
+            if (W.IsZoomed(h)) W.ShowWindow(h, 4); // un-maximize without activating, or it can't be parked
+            RECT r;
+            if (W.GetWindowRect(h, out r)) { e.Orig = r; e.HasOrig = true; }
+            int x = W.GetSystemMetrics(76) - (r.R - r.L) - 400, y = W.GetSystemMetrics(77);
+            W.SetWindowPos(h, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+
+        static void Unhide(Expected e)
+        {
+            if (e.Hwnd == IntPtr.Zero || !e.HasOrig || !W.IsWindow(e.Hwnd) || W.GetParent(e.Hwnd) != IntPtr.Zero) return;
+            W.SetWindowPos(e.Hwnd, IntPtr.Zero, e.Orig.L, e.Orig.T, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+
+        static bool IsChrome(IntPtr h)
+        {
+            var cls = new StringBuilder(64); W.GetClassNameW(h, cls, 64);
+            return cls.ToString() == "Chrome_WidgetWin_1";
+        }
+
+        static bool TitleHas(IntPtr h, string token)
+        {
+            if (string.IsNullOrEmpty(token)) return false;
+            var title = new StringBuilder(512); W.GetWindowTextW(h, title, 512);
+            return title.ToString().IndexOf(token, StringComparison.Ordinal) >= 0;
+        }
+
+        static void ForEachChromeWindow(Action<IntPtr> each)
+        {
+            W.EnumWindows((h, l) => { if (W.IsWindowVisible(h) && IsChrome(h)) each(h); return true; }, IntPtr.Zero);
+        }
+
+        static IntPtr FindByToken(string token, HashSet<IntPtr> excluded)
         {
             IntPtr found = IntPtr.Zero;
-            var cls = new StringBuilder(64); var title = new StringBuilder(512);
-            W.EnumWindows((h, l) =>
-            {
-                if (!W.IsWindowVisible(h)) return true;
-                cls.Clear(); W.GetClassNameW(h, cls, 64);
-                if (cls.ToString() != "Chrome_WidgetWin_1") return true;
-                title.Clear(); W.GetWindowTextW(h, title, 512);
-                if (title.ToString().IndexOf(token, StringComparison.Ordinal) >= 0) { found = h; return false; }
-                return true;
-            }, IntPtr.Zero);
+            ForEachChromeWindow(h => { if (found == IntPtr.Zero && (excluded == null || !excluded.Contains(h)) && TitleHas(h, token)) found = h; });
             return found;
         }
 
-        static void Attach(Float f, IntPtr chrome)
+        static void Attach(Float f, IntPtr chrome, Expected ex)
         {
             f.Chrome = chrome; f.Touched = Environment.TickCount;
             Calibrate(f);
@@ -328,7 +446,7 @@ namespace Perch
             {
                 target = DockRect(parent, (int)(340 * s));
             }
-            else if (want != null && OnSomeMonitor(want))
+            else if (want != null && OnSomeMonitor(want) && SameMonitor(want, Anchor(chrome, ex)))
             {
                 target = new RECT { L = (int)Num(want, "x", 0), T = (int)Num(want, "y", 0) };
                 target.R = target.L + Math.Max((int)(200 * s), (int)Num(want, "w", 480 * s));
@@ -338,8 +456,8 @@ namespace Perch
             {
                 var def = Sub(f.Want, "def");
                 int w = (int)(Num(def, "w", 480) * s), h = (int)(Num(def, "h", 270) * s), m = (int)(20 * s);
-                RECT wr; W.GetWindowRect(chrome, out wr);
-                var wa = WorkArea(wr);
+                // Bottom-right of the screen the user floated from (the parked window itself is off-screen).
+                var wa = WorkArea(Anchor(chrome, ex));
                 target = new RECT { L = wa.R - m - w, T = wa.B - m - h, R = wa.R - m, B = wa.B - m };
             }
 
@@ -356,6 +474,22 @@ namespace Perch
             Send(Obj("type", "attached", "id", f.Id, "rect", Rect(Viewport(f))));
             SendState(f);
             if (Debug) Send(Obj("type", "debug", "fx", f.Fx, "fy", f.Fy, "fr", f.Fr, "fb", f.Fb));
+        }
+
+        // Where the float should appear: the window the user floated from, else where Chrome
+        // first created the float window, else wherever it is now.
+        static RECT Anchor(IntPtr chrome, Expected ex)
+        {
+            if (ex != null && ex.HasSource) return ex.Source;
+            if (ex != null && ex.HasOrig) return ex.Orig;
+            RECT r; W.GetWindowRect(chrome, out r); return r;
+        }
+
+        static bool SameMonitor(Dictionary<string, object> want, RECT anchor)
+        {
+            var rc = new RECT { L = (int)Num(want, "x", 0), T = (int)Num(want, "y", 0) };
+            rc.R = rc.L + (int)Num(want, "w", 0); rc.B = rc.T + (int)Num(want, "h", 0);
+            return W.MonitorFromRect(ref rc, 2) == W.MonitorFromRect(ref anchor, 2);
         }
 
         static bool OnSomeMonitor(Dictionary<string, object> r)
@@ -418,8 +552,10 @@ namespace Perch
 
         static void Place(Float f, int x, int y, int w, int h, bool moveOnly)
         {
-            W.SetWindowPos(f.Host, f.Pinned ? TOPMOST : NOTOPMOST, x, y, w, h, SWP_NOACTIVATE | (moveOnly ? SWP_NOSIZE : 0));
+            // Size Chrome's window first: it starts redrawing at the new size before the host
+            // grows, so the host's empty background isn't exposed at the growing edge.
             if (!moveOnly) PlaceChild(f, w, h);
+            W.SetWindowPos(f.Host, f.Pinned ? TOPMOST : NOTOPMOST, x, y, w, h, SWP_NOACTIVATE | (moveOnly ? SWP_NOSIZE : 0));
             DockChildren(f);
         }
 
@@ -542,8 +678,8 @@ namespace Perch
                 var cv = Viewport(c);
                 var r = DockRect(p, cv.R - cv.L);
                 bool sameSize = (r.B - r.T) == (cv.B - cv.T);
-                W.SetWindowPos(c.Host, c.Pinned ? TOPMOST : NOTOPMOST, r.L, r.T, r.R - r.L, r.B - r.T, SWP_NOACTIVATE | (sameSize ? SWP_NOSIZE : 0));
                 if (!sameSize) PlaceChild(c, r.R - r.L, r.B - r.T);
+                W.SetWindowPos(c.Host, c.Pinned ? TOPMOST : NOTOPMOST, r.L, r.T, r.R - r.L, r.B - r.T, SWP_NOACTIVATE | (sameSize ? SWP_NOSIZE : 0));
             }
         }
 

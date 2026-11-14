@@ -121,9 +121,31 @@
     return s;
   }
 
-  const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => null);
+  // After Perch updates or reloads, copies already running in open tabs are cut off from the
+  // extension ("Extension context invalidated"). Such a copy steps aside quietly: it hides its
+  // Float button and stops listening, so the updated copy can take over the tab.
+  let retired = false;
+  const alive = () => { try { return !!chrome.runtime && !!chrome.runtime.id; } catch { return false; } };
+  function retire() {
+    if (retired) return;
+    retired = true;
+    if (pill) pill.host.remove();
+    if (window.__perch && window.__perch.owner === token0) delete window.__perch;
+  }
+  const token0 = {};
+  const send = (msg) => {
+    if (retired || !alive()) { retire(); return Promise.resolve(null); }
+    try {
+      return chrome.runtime.sendMessage(msg).catch((e) => {
+        if (!alive() || /context invalidated/i.test(String(e && e.message))) retire();
+        return null;
+      });
+    } catch {
+      retire();
+      return Promise.resolve(null);
+    }
+  };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
   const toMain = (cmd) => document.dispatchEvent(new CustomEvent('perch:main', { detail: cmd }));
 
   // ---------------------------------------------------------------- finding the video
@@ -337,11 +359,12 @@
     token = null;
   }
 
+  // Uses plain timers, not animation frames: while the helper parks the new window off-screen,
+  // Chrome treats the page as hidden and pauses animation frames, which would hang this forever.
   async function stableViewport() {
     let last = '';
-    for (let i = 0; i < 25; i++) {
-      await frame();
-      await sleep(25);
+    for (let i = 0; i < 12; i++) {
+      await sleep(40);
       const key = `${innerWidth}x${innerHeight}`;
       if (key === last) break;
       last = key;
@@ -563,6 +586,8 @@
   }
 
   document.addEventListener('pointermove', (e) => {
+    if (retired) return;
+    if (!alive()) { retire(); return; }
     if (moveQueued) return;
     moveQueued = true;
     const { clientX: x, clientY: y } = e;
@@ -582,6 +607,9 @@
   // ---------------------------------------------------------------- messages
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     switch (msg.type) {
+      case 'perch:token':
+        if (TOP && msg.token) setToken(msg.token);
+        return false;
       case 'perch:prefloat':
         if (adapter.freezeLayout) toMain('freeze-on');
         return false;
@@ -636,7 +664,11 @@
     }
   });
 
-  window.__perch = { score: () => pick().score };
+  window.__perch = {
+    owner: token0,
+    alive: () => { if (!retired && !alive()) retire(); return !retired; },
+    score: () => (window.__perch && !retired && alive() ? pick().score : (retire(), -1)),
+  };
 
   // A floating tab that navigates (next episode, new stream) re-enters fill mode by itself.
   send({ type: 'perch:hello' }).then((res) => {

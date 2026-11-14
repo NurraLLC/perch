@@ -68,6 +68,7 @@ async function onHelper(msg) {
     case 'attached':
       if (!f) break;
       f.attached = true;
+      f.rect = msg.rect;
       save();
       sendFrame(f.tabId, 0, { type: 'perch:untoken' });
       break;
@@ -77,6 +78,7 @@ async function onHelper(msg) {
       sendFrame(f.tabId, 0, { type: 'perch:state', notice: 'Couldn’t pin this window. Try Back to tab, then float again.' });
       break;
     case 'placed': {
+      if (f && msg.rect) { f.rect = msg.rect; save(); }
       if (!f || f.kind !== 'video' || !msg.rect) break;
       const { placements = {} } = await chrome.storage.local.get('placements');
       placements[f.host] = msg.rect;
@@ -92,6 +94,11 @@ async function onHelper(msg) {
     case 'hotkey':
       if (f && msg.name === 'playpause') broadcast(f.tabId, { type: 'perch:playpause' });
       break;
+    case 'expecting': {
+      const done = expectWaiters.get(msg.id);
+      if (done) done();
+      break;
+    }
     case 'released': {
       const done = releaseWaiters.get(msg.id);
       if (done) done();
@@ -106,7 +113,8 @@ async function onHelper(msg) {
 // ------------------------------------------------------------------ floating
 async function ensureInjected(tabId) {
   try {
-    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: () => !!window.__perch });
+    // A copy left over from before an update is "there" but disconnected; treat it as absent.
+    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: () => !!(window.__perch && (!window.__perch.alive || window.__perch.alive())) });
     if (r && r.result) return true;
   } catch {
     return false; // chrome:// pages, the Web Store, and so on
@@ -172,11 +180,20 @@ async function floatTab(tabId, preferFrame) {
   // Sites that rebuild on resize (X) freeze their layout before the window shrinks.
   await broadcast(tabId, { type: 'perch:prefloat' });
 
+  // Tag the tab and have the helper watch for the new window before it exists, so it can
+  // hide it the moment it appears instead of showing Chrome's frame for a split second.
+  f.token = `perch-${Math.random().toString(36).slice(2, 10)}`;
+  if (await helperReady()) {
+    await sendFrame(tabId, 0, { type: 'perch:token', token: f.token });
+    await expectWindow(tabId, f.token);
+  }
+
   let created;
   try {
     created = await chrome.windows.create({
       tabId,
       type: 'popup',
+      state: 'normal', // a maximized source window would otherwise open the popup maximized
       focused: true,
       width,
       height,
@@ -185,6 +202,7 @@ async function floatTab(tabId, preferFrame) {
     });
   } catch (e) {
     forget(tabId);
+    post({ type: 'release', id: tabId });
     broadcast(tabId, { type: 'perch:exit' });
     return { ok: false, reason: 'window', error: String(e && e.message || e) };
   }
@@ -197,15 +215,35 @@ async function floatTab(tabId, preferFrame) {
   return { ok: true };
 }
 
+const expectWaiters = new Map();
+function expectWindow(tabId, token) {
+  return new Promise((resolve) => {
+    const done = () => { expectWaiters.delete(tabId); resolve(); };
+    expectWaiters.set(tabId, done);
+    setTimeout(done, 300);
+    post({ type: 'expect', id: tabId, token });
+  });
+}
+
 async function attach(f) {
   const ok = await helperReady();
-  const token = `perch-${Math.random().toString(36).slice(2, 10)}`;
+  const token = f.token || `perch-${Math.random().toString(36).slice(2, 10)}`;
   let metrics = null;
   for (let i = 0; i < 20 && !metrics; i++) {
-    metrics = await sendFrame(f.tabId, 0, { type: 'perch:enter', kind: f.kind, token: ok ? token : null, helper: ok });
+    // Never wait forever on the page: a hidden page can stall, and the float must still appear.
+    metrics = await Promise.race([
+      sendFrame(f.tabId, 0, { type: 'perch:enter', kind: f.kind, token: ok ? token : null, helper: ok }),
+      sleep(1500).then(() => null),
+    ]);
     if (!metrics) await sleep(250);
   }
-  if (!ok || !metrics) return;
+  if (!ok) return;
+  if (!metrics) {
+    // Couldn't measure the page: let the helper give the window back instead of leaving it parked.
+    post({ type: 'release', id: f.tabId });
+    sendFrame(f.tabId, 0, { type: 'perch:state', notice: 'Couldn’t pin this window. Press Esc or ↩ to go back.' });
+    return;
+  }
   const { placements = {} } = await chrome.storage.local.get('placements');
   post({
     type: 'attach',
