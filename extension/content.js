@@ -47,9 +47,27 @@
       },
     },
     {
-      match: /(^|\.)(x|twitter)\.com$/,
+      // *.x.com.localhost is only for local testing (Chrome resolves .localhost to this PC).
+      match: /(^|\.)(x|twitter)\.com(\.localhost)?$/,
       player: (v) => v.closest('[data-testid="videoPlayer"]') || v.closest('[data-testid="videoComponent"]'),
       fullscreenButton: null,
+      // X rebuilds the whole timeline when the window narrows; keep its layout still.
+      freezeLayout: true,
+      // Identify a video by its post's link plus its position in that post, so a quoted
+      // post's video is found again if X re-renders the timeline anyway.
+      key: (v) => {
+        const article = v.closest('article');
+        const link = article && article.querySelector('a[href*="/status/"]');
+        if (!link) return null;
+        return { href: link.getAttribute('href'), index: Array.from(article.querySelectorAll('video')).indexOf(v) };
+      },
+      findByKey: (k) => {
+        for (const article of document.querySelectorAll('article')) {
+          const link = article.querySelector('a[href*="/status/"]');
+          if (link && link.getAttribute('href') === k.href) return article.querySelectorAll('video')[Math.max(0, k.index)] || null;
+        }
+        return null;
+      },
     },
     {
       match: /(^|\.)crunchyroll\.com$/,
@@ -200,6 +218,54 @@
   function enterFill() {
     const v = (chosen && chosen.isConnected && chosen) || pick().video;
     if (!v) return false;
+    fillVideo(v);
+    state.key = adapter.key ? adapter.key(v) : null;
+    watchVideo();
+    return true;
+  }
+
+  function clearMarks() {
+    for (const el of marked) {
+      el.removeAttribute('data-perch-fill');
+      el.removeAttribute('data-perch-anc');
+    }
+    marked.clear();
+  }
+
+  // Sites can replace the floated <video> (re-render, next item). Find it again and refill;
+  // if it's really gone, say so in the float instead of showing the rest of the page.
+  let watchTimer = null;
+  function watchVideo() {
+    clearInterval(watchTimer);
+    let lostAt = 0;
+    watchTimer = setInterval(() => {
+      if (!state.floating) return clearInterval(watchTimer);
+      if (state.video && state.video.isConnected) { lostAt = 0; return; }
+      let next = null;
+      if (adapter.findByKey && state.key) next = adapter.findByKey(state.key);
+      else if (!adapter.key) {
+        const { video, score: s } = pick();
+        if (video && s > 0 && video.getBoundingClientRect().width >= 200) next = video;
+      }
+      if (next) {
+        clearMarks();
+        fillVideo(next);
+        lostAt = 0;
+        return;
+      }
+      if (!lostAt) lostAt = Date.now();
+      else if (Date.now() - lostAt > 2500 && lostAt > 0) {
+        lostAt = -1;
+        if (TOP) showLost();
+      }
+    }, 500);
+  }
+
+  function showLost() {
+    toastMsg('This video left the page. Press Esc or ↩ to go back to the tab.', 0);
+  }
+
+  function fillVideo(v) {
     state.video = v;
     v.setAttribute('data-perch-video', '');
     toMain('fake-on');
@@ -226,11 +292,8 @@
   }
 
   function exitFill() {
-    for (const el of marked) {
-      el.removeAttribute('data-perch-fill');
-      el.removeAttribute('data-perch-anc');
-    }
-    marked.clear();
+    clearInterval(watchTimer);
+    clearMarks();
     for (const el of document.querySelectorAll('[data-perch-anc],[data-perch-fill],[data-perch-fs]')) {
       el.removeAttribute('data-perch-anc');
       el.removeAttribute('data-perch-fill');
@@ -239,7 +302,9 @@
     document.documentElement.removeAttribute('data-perch-on');
     if (state.video) state.video.removeAttribute('data-perch-video');
     state.video = null;
+    state.key = null;
     toMain('fake-off');
+    toMain('freeze-off');
   }
 
   // A child frame (Crunchyroll's player, embeds) asks its parent to give it the whole window.
@@ -363,6 +428,7 @@
     const wrap = h('div', { class: state.helper ? '' : 'off' }, bar, ...edges, toast);
     root.append(wrap);
     document.documentElement.append(host);
+    viewportObserver.observe(host);
 
     let hideTimer = null;
     const show = (ms) => {
@@ -381,7 +447,7 @@
   }
 
   function removeStrip() {
-    if (ui) ui.host.remove();
+    if (ui) { viewportObserver.unobserve(ui.host); ui.host.remove(); }
     ui = null;
   }
 
@@ -408,13 +474,15 @@
     if (ms) ui.toastTimer = setTimeout(() => ui && ui.toast.classList.remove('on'), ms);
   }
 
-  // Keep the helper's idea of the frame in sync with the page viewport.
+  // Keep the helper's idea of the frame in sync with the page viewport. Watches our own
+  // full-window overlay rather than window resize events, which X's layout freeze holds back.
   let calibTimer = null;
-  addEventListener('resize', () => {
+  function onViewportChange() {
     if (!TOP || !state.floating || !state.helper) return;
     clearTimeout(calibTimer);
     calibTimer = setTimeout(() => send({ type: 'perch:calib', iw: innerWidth, ih: innerHeight, dpr: devicePixelRatio }), 140);
-  });
+  }
+  const viewportObserver = new ResizeObserver(onViewportChange);
 
   addEventListener('keydown', (e) => {
     if (!state.floating || state.kind !== 'video' || e.key !== 'Escape') return;
@@ -514,6 +582,9 @@
   // ---------------------------------------------------------------- messages
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     switch (msg.type) {
+      case 'perch:prefloat':
+        if (adapter.freezeLayout) toMain('freeze-on');
+        return false;
       case 'perch:floating':
         state.floating = msg.on;
         if (msg.on) hidePill();

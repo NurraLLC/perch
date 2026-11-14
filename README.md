@@ -23,7 +23,7 @@ lets the site's player fill it, and removes the browser frame around it.
 
 You need Windows 10 or 11 and Chrome, Edge or Brave.
 
-1. **Download** `Perch-v0.1.0.zip` from the
+1. **Download** `Perch-v0.1.1.zip` from the
    [latest release](https://github.com/NurraLLC/perch/releases/latest). Unzip it somewhere
    permanent, such as `Documents\Perch`. The browser loads the extension from that
    folder, so don't delete it.
@@ -100,10 +100,11 @@ It stores only your settings and per-site window positions, locally in your brow
 This is an early release. Tested so far:
 - A real browser popup window: frameless crop, clicks, opacity, Ghost click-through, drag, resize, fit, release.
 - The full extension in a clean browser profile.
-- YouTube.
+- YouTube, and X single posts. Quoted posts in the X feed are fixed in v0.1.1 and verified
+  against a reproduction of X's feed rebuild.
 
 **Not yet verified:**
-- X, Twitch, Kick and Crunchyroll.
+- Twitch, Kick and Crunchyroll.
 - Chat floats.
 - Opacity and Ghost on DRM-protected video.
 

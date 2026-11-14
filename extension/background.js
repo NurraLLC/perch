@@ -169,6 +169,9 @@ async function floatTab(tabId, preferFrame) {
   floats.set(tabId, f);
   save();
 
+  // Sites that rebuild on resize (X) freeze their layout before the window shrinks.
+  await broadcast(tabId, { type: 'perch:prefloat' });
+
   let created;
   try {
     created = await chrome.windows.create({
@@ -182,6 +185,7 @@ async function floatTab(tabId, preferFrame) {
     });
   } catch (e) {
     forget(tabId);
+    broadcast(tabId, { type: 'perch:exit' });
     return { ok: false, reason: 'window', error: String(e && e.message || e) };
   }
   f.windowId = created.id;
