@@ -6,7 +6,12 @@ own player, so subtitles, live streams, quality settings and your logins all kee
 
 ![A Perch float with its top bar showing: fit, opacity, ghost, pin, back and close](docs/float.png)
 
-Works in Chrome, Edge and Brave on Windows 10 and 11.
+## Requirements
+
+- **Windows 10 or 11.** Mac and Linux aren't supported, because the helper that keeps
+  floats on top is Windows-only.
+- **Chrome.** Edge and Brave run on the same engine, and the installer sets the helper up
+  for them too, but they haven't been tested yet. Firefox and Safari aren't supported.
 
 ## Why not Picture-in-Picture?
 
@@ -21,14 +26,14 @@ lets the site's player fill it, and removes the browser frame around it.
 
 ## Install
 
-You need Windows 10 or 11 and Chrome, Edge or Brave.
-
-1. **Download** `Perch-v0.1.1.zip` from the
+1. **Download** the `Perch-v….zip` file from the
    [latest release](https://github.com/NurraLLC/perch/releases/latest). Unzip it somewhere
    permanent, such as `Documents\Perch`. The browser loads the extension from that
    folder, so don't delete it.
 2. **Install the helper.** Double-click `install-helper.cmd`.
-   - It builds a ~25 KB helper from `helper/PerchHelper.cs` with the C# compiler that ships with Windows.
+   - It builds a ~20 KB helper from `helper/PerchHelper.cs` with the C# compiler that ships with Windows.
+   - Some antivirus tools are wary of a freshly built, unsigned program. If yours blocks
+     it, allow `perch-helper.exe`. You can read its full source in `helper/PerchHelper.cs`.
    - It installs to `%LOCALAPPDATA%\Perch` for your user only; no admin needed.
    - It registers the helper with Chrome, Edge and Brave.
 3. **Load the extension:**
@@ -105,8 +110,14 @@ This is an early release. Tested so far:
 
 **Not yet verified:**
 - Twitch, Kick and Crunchyroll.
+- Edge and Brave.
 - Chat floats.
 - Opacity and Ghost on DRM-protected video.
+
+**Known rough edges:**
+- For a split second while a video pops out, you may see a grey box or the browser window
+  before the float settles.
+- Growing the window quickly can briefly show a dark edge until the page catches up.
 
 If Ghost turns protected video black, turn off hardware acceleration in your browser
 (Settings → System).
@@ -124,7 +135,8 @@ Run `install-helper.cmd -Uninstall`, then remove the extension.
 | `extension/` | MV3 extension: service worker, content script, page-world fullscreen redirect, popup |
 | `helper/PerchHelper.cs` | Native-messaging helper: host windows, drag/resize/snap, opacity, Ghost, global hotkeys |
 | `install-helper.cmd` / `.ps1` | Builds and registers the helper for the current user |
-| `tools/` | Icon generator and end-to-end checks against real browser windows |
+| `tools/` | Icon generator and end-to-end checks against real browser windows (developer use) |
+| `docs/` | README images |
 
 ## License
 
