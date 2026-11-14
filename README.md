@@ -23,8 +23,10 @@ lets the site's player fill it, and removes the browser frame around it.
 
 You need Windows 10 or 11 and Chrome, Edge or Brave.
 
-1. **Download** this repository: **Code → Download ZIP**. Unzip it somewhere permanent,
-   such as `Documents\Perch`.
+1. **Download** `Perch-v0.1.0.zip` from the
+   [latest release](https://github.com/NurraLLC/perch/releases/latest). Unzip it somewhere
+   permanent, such as `Documents\Perch`. The browser loads the extension from that
+   folder, so don't delete it.
 2. **Install the helper.** Double-click `install-helper.cmd`.
    - It builds a ~25 KB helper from `helper/PerchHelper.cs` with the C# compiler that ships with Windows.
    - It installs to `%LOCALAPPDATA%\Perch` for your user only; no admin needed.
